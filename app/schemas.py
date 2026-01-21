@@ -19,11 +19,3 @@ class ReadingIn(BaseModel):
     temperature_c: float = Field(ge=-50, le=150)  # typical sensor range
     humidity_pct: float = Field(ge=0, le=100)
     status: Status
-
-class ReadingOut(BaseModel):
-    id: int
-    sensor_id: str
-    ts: datetime
-    temperature_c: float
-    humidity_pct: float
-    status: str

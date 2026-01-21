@@ -5,7 +5,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func,select
 from app.db import engine, get_session
 from app.models import Base, SensorReading
-from app.schemas import ReadingIn, ReadingOut, Status, ErrorResponse
+from app.schemas import ReadingIn, Status, ErrorResponse
 from app.validation import is_valid_reading
 from typing import Annotated
 
