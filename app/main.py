@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse,ORJSONResponse
 from sqlalchemy.orm import Session
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func,select
 from app.db import engine, get_session
 from app.models import Base, SensorReading
@@ -27,7 +28,7 @@ async def not_found_handler(request: Request, exc: IdNotFoundError):
 def health():
     return {"status": "online"}
 
-@app.post("/ingest", response_model=ReadingOut, status_code=status.HTTP_201_CREATED, tags=["ingest"], summary="Ingest data into the database following the schema")
+@app.post("/ingest", response_model=None, status_code=status.HTTP_201_CREATED, tags=["ingest"], summary="Ingest data into the database following the schema")
 def ingest(reading: ReadingIn, session: Session = Depends(get_session)):
     # Pydantic has already validated types/ranges
     ok, reason = is_valid_reading(reading)
@@ -44,16 +45,9 @@ def ingest(reading: ReadingIn, session: Session = Depends(get_session)):
     session.add(row)
     session.commit()
     session.refresh(row)
-    return ReadingOut(
-        id=row.id,
-        sensor_id=row.sensor_id,
-        ts=row.ts,
-        temperature_c=row.temperature_c,
-        humidity_pct=row.humidity_pct,
-        status=row.status,
-    )
+    return JSONResponse(status_code=201, content="Successfully ingested reading")
 
-@app.get("/readings", response_model=list[ReadingOut], tags=["query"], summary="Get the entire readings with default limit 50 and offset 0")
+@app.get("/readings", response_model=None, tags=["query"], summary="Get the entire readings with default limit 50 and offset 0")
 def list_readings(
     offset: int = 0, 
     limit: int = 50,
@@ -63,9 +57,9 @@ def list_readings(
     max_temp: float | None = None,
     session: Session = Depends(get_session)
     ):
-    rows = session.query(SensorReading)
-    if min_temp and max_temp and min_temp > max_temp:
+    if min_temp is not None and max_temp is not None and min_temp > max_temp:
         raise HTTPException(status_code=400, detail="Error: Minimum temperature cannot be greater than maximum temperature")
+    rows = session.query(SensorReading)
     if sensor_id:
         rows = rows.filter(SensorReading.sensor_id == sensor_id)
     if status:
@@ -74,21 +68,48 @@ def list_readings(
         rows = rows.filter(SensorReading.temperature_c >= min_temp)
     if max_temp:
         rows = rows.filter(SensorReading.temperature_c <= max_temp)
-    rows = rows.order_by(SensorReading.id.desc())
-    rows = rows.offset(offset).limit(min(limit,200))
-    return [
-        ReadingOut(
-            id=r.id, sensor_id=r.sensor_id, ts=r.ts,
-            temperature_c=r.temperature_c, humidity_pct=r.humidity_pct, status=r.status
-        ) for r in rows
+    
+    res = (
+        rows.order_by(SensorReading.id.desc())
+         .offset(offset)
+         .limit(min(limit, 200))
+         .all()
+    )
+
+    
+    payload = [
+        {
+            "id": r.id,
+            "sensor_id": r.sensor_id,
+            "ts": r.ts,
+            "temperature_c": r.temperature_c,
+            "humidity_pct": r.humidity_pct,
+            "status": r.status,
+        }
+        for r in res
     ]
 
-@app.get("/readings/{id}", response_model=ReadingOut, tags=["query"], summary="Get the readings of a particular id")
+    # Return a single JSONResponse with the list as content
+    return JSONResponse(status_code=200, content=jsonable_encoder(payload))
+
+
+
+@app.get("/readings/{id}", response_model=None, tags=["query"], summary="Get the readings of a particular id")
 async def get_data_by_id(id: int, session: Session = Depends(get_session)):
     try:
         row = session.query(SensorReading).filter_by(id=id).one()
-        return ReadingOut(
-            id=row.id, sensor_id=row.sensor_id, ts=row.ts, temperature_c=row.temperature_c, humidity_pct=row.humidity_pct, status=row.status
+        return JSONResponse(
+            status_code=201,
+            content=jsonable_encoder(
+                {
+                    "id": row.id,
+                    "sensor_id": row.sensor_id,
+                    "ts": row.ts,
+                    "temperature_c": row.temperature_c,
+                    "humidity_pct": row.humidity_pct,
+                    "status": row.status
+                }
+            )
         )
     except Exception as e:
         # row_count = session.query(SensorReading).count()
@@ -113,6 +134,7 @@ async def get_summary(session: Session = Depends(get_session)):
     min_temp = session.execute(select(func.min(SensorReading.temperature_c))).scalar()
     max_hum = session.execute(select(func.max(SensorReading.humidity_pct))).scalar()
     min_hum = session.execute(select(func.min(SensorReading.humidity_pct))).scalar()
+    
     return {
         "Total Count" : total_count,
         "Average Temperature": round(avg_temp,2),

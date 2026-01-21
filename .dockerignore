@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pid
+*.log
+
+# Venv
+.venv/
+.env
+
+# VCS / IDE
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# Caches
+.dist/
+build/
+dist/
+.cache/
+.mypy_cache/
+.pytest_cache/
+
+# Local DB files (only if you do NOT want to bake SQLite into image)
+*.db
+*.sqlite
+*.sqlite3
